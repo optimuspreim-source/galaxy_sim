@@ -66,6 +66,7 @@ savePass = new SavePass(
 );
 
 // blend pass
+let blackHoleStates = [];
 blendPass = new ShaderPass(BlendShader, "tDiffuse1");
 blendPass.uniforms["tDiffuse2"].value = savePass.renderTarget.texture;
 blendPass.uniforms["mixRatio"].value = 0.5;
@@ -238,6 +239,12 @@ function initComputeRenderer(typeOfSimulation) {
     velocityUniforms[ "uMaxAccelerationColor" ] = { value: 0.0 };
     velocityUniforms[ "blackHoleForce" ] = { value: 0.0 };
     velocityUniforms[ "luminosity" ] = { value: 0.0 };
+    // Übergabe der Black-Hole-Parameter als Uniform-Arrays
+    // (Im Shader: uniform vec3 uBlackHolePositions[9]; uniform float uBlackHoleMasses[9];)
+    const bhPositions = window.blackHoleParams.map(bh => new THREE.Vector3(...bh.position));
+    const bhMasses = window.blackHoleParams.map(bh => bh.mass);
+    velocityUniforms[ "uBlackHolePositions" ] = { value: bhPositions };
+    velocityUniforms[ "uBlackHoleMasses" ] = { value: bhMasses };
 
     const error = gpuCompute.init();
 
@@ -327,61 +334,93 @@ function fillTextures( texturePosition, textureVelocity ) {
     const middleVelocity = effectController.middleVelocity;
     const maxVel = effectController.velocity;
 
-    for ( let k = 0, kl = posArray.length; k < kl; k += 4 ) {
-        // Position
-        let x, z, rr, y, vx, vy, vz;
-        // The first particle will be the black hole
-        if (k === 0){
-            x = 0;
-            z = 0;
-            y = 0;
-            rr = 0;
-        } else {
-            // Generate random position for the particle within the radius
-            do {
-                x = ( Math.random() * 2 - 1 );
-                z = ( Math.random() * 2 - 1 );
-                // The variable rr is used to calculate the distance from the center of the radius for each particle.
-                // It is used in the calculation of rExp which is used to determine the position of the particle within the radius.
-                // If a particle is closer to the center, rr will be smaller, and rExp will be larger, which means that the particle will be placed closer to the center.
-                // It also can affect the velocity of the particle as it is used in the calculation of the velocity of the particle.
-                rr = x * x + z * z;
+    const numGalaxies = 9;
+    const totalParticles = effectController.numberOfStars;
+    const particlesPerGalaxy = Math.floor(totalParticles / numGalaxies);
+    const remainder = totalParticles % numGalaxies;
 
-            } while ( rr > 1 );
-            rr = Math.sqrt( rr );
+    // Black-Hole-Parameter-Array vorbereiten (Position, Masse)
+    window.blackHoleParams = [];
 
-            const rExp = radius * Math.pow( rr, middleVelocity );
-
-            // Velocity
-            const vel = maxVel * Math.pow( rr, 0.2 );
-
-            vx = vel * z + ( Math.random() * 2 - 1 ) * 0.001;
-            vy = ( Math.random() * 2 - 1 ) * 0.001 * 0.05;
-            vz = - vel * x + ( Math.random() * 2 - 1 ) * 0.001;
-
-            x *= rExp;
-            z *= rExp;
-            y = ( Math.random() * 2 - 1 ) * height;
-        }
-
-        // Fill in texture values
-        posArray[ k + 0 ] = x;
-        posArray[ k + 1 ] = y;
-        posArray[ k + 2 ] = z;
-
-        // Hide dark matter (hide 85% of stars)
-        if (k > 0.85 * (posArray.length / 4)){
-            posArray[ k + 3 ] = 1;
-        } else {
-            posArray[ k + 3 ] = 0;
-        }
-
-
-        velArray[ k + 0 ] = vx;
-        velArray[ k + 1 ] = vy;
-        velArray[ k + 2 ] = vz;
-        velArray[ k + 3 ] = 0;
+    // Zufällige Offsets und Rotationen für jede Galaxie
+    const galaxyParams = [];
+    for (let g = 0; g < numGalaxies; g++) {
+        // Zufällige Position im Raum (z.B. in einer großen Box)
+        const offset = [
+            (Math.random() - 0.5) * 1000,
+            (Math.random() - 0.5) * 1000,
+            (Math.random() - 0.5) * 1000
+        ];
+        // Zufällige Inklination (Eulerwinkel)
+        const inclination = [
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        ];
+        galaxyParams.push({ offset, inclination });
+        // Black-Hole-Parameter speichern (Position, Masse)
+        window.blackHoleParams.push({
+            position: offset,
+            mass: effectController.blackHoleForce
+        });
     }
+
+    let k = 0;
+    for (let g = 0; g < numGalaxies; g++) {
+        const n = particlesPerGalaxy + (g < remainder ? 1 : 0);
+        const { offset, inclination } = galaxyParams[g];
+        const rot = new THREE.Euler(...inclination);
+
+        for (let i = 0; i < n; i++, k += 4) {
+            let x, y, z, vx, vy, vz, rr;
+            if (i === 0) {
+                // Black Hole im Zentrum der Galaxie
+                x = 0; y = 0; z = 0; rr = 0;
+                vx = 0; vy = 0; vz = 0;
+            } else {
+                do {
+                    x = (Math.random() * 2 - 1);
+                    z = (Math.random() * 2 - 1);
+                    rr = x * x + z * z;
+                } while (rr > 1);
+                rr = Math.sqrt(rr);
+
+                const rExp = radius * Math.pow(rr, middleVelocity);
+                const vel = maxVel * Math.pow(rr, 0.2);
+
+                vx = vel * z + (Math.random() * 2 - 1) * 0.001;
+                vy = (Math.random() * 2 - 1) * 0.001 * 0.05;
+                vz = -vel * x + (Math.random() * 2 - 1) * 0.001;
+
+                x *= rExp;
+                z *= rExp;
+                y = (Math.random() * 2 - 1) * height;
+
+                // Rotation anwenden
+                const vec = new THREE.Vector3(x, y, z).applyEuler(rot);
+                x = vec.x + offset[0];
+                y = vec.y + offset[1];
+                z = vec.z + offset[2];
+
+                const vvec = new THREE.Vector3(vx, vy, vz).applyEuler(rot);
+                vx = vvec.x;
+                vy = vvec.y;
+                vz = vvec.z;
+            }
+
+            posArray[k + 0] = x;
+            posArray[k + 1] = y;
+            posArray[k + 2] = z;
+            // Galaxie-Index als viertes Attribut (statt dark matter flag)
+            posArray[k + 3] = g;
+
+            velArray[k + 0] = vx;
+            velArray[k + 1] = vy;
+            velArray[k + 2] = vz;
+            velArray[k + 3] = 0;
+        }
+    }
+    // Übergabe der Black-Hole-Parameter an Shader muss im nächsten Schritt erfolgen
 }
 
 /**

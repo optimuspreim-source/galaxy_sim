@@ -1,5 +1,4 @@
 export default `
-// For PI declaration:
 #include <common>
 
 uniform float timeStep;
@@ -7,78 +6,72 @@ uniform float gravity;
 uniform float interactionRate;
 uniform float blackHoleForce;
 uniform float uMaxAccelerationColor;
-
+uniform vec3 uBlackHolePositions[9];
+uniform float uBlackHoleMasses[9];
 
 const float width = resolution.x;
 const float height = resolution.y;
 
-
-void main()	{
-
-    // Calculate the ID and UV coordinate of the current pixel
+void main() {
     vec2 uv = gl_FragCoord.xy / resolution.xy;
     float idParticle = uv.y * resolution.x + uv.x;
 
     // Sample the position and velocity of the current particle from the input textures
     vec4 tmpPos = texture2D( texturePosition, uv );
     vec3 pos = tmpPos.xyz;
+    float galaxyIndex = tmpPos.w;
 
     vec4 tmpVel = texture2D( textureVelocity, uv );
     vec3 vel = tmpVel.xyz;
-
     float accColor = tmpVel.w;
 
-    // Initialize the acceleration to zero
     vec3 acceleration = vec3( 0.0 );
 
-    // Calculate the acceleration due to gravity from all other particles
+    // --- Intergalaktische Kräfte: Black Holes aller Galaxien ---
+    for (int g = 0; g < 9; g++) {
+        vec3 bhPos = uBlackHolePositions[g];
+        float bhMass = uBlackHoleMasses[g];
+        vec3 dPos = bhPos - pos;
+        float distance = length(dPos) + 1e-3;
+        float distanceSq = distance * distance + 1.0;
+        float grav = gravity * bhMass / distanceSq;
+        grav = min(grav, 1.0);
+        // Eigene Galaxie: stärkere Gravitation
+        if (int(galaxyIndex + 0.5) == g) {
+            grav *= 2.0;
+        }
+        acceleration += grav * normalize(dPos);
+    }
+
+    // --- Optionale: Partikel-Partikel-Kräfte innerhalb der eigenen Galaxie ---
     for ( float y = 0.0; y < height * interactionRate; y++ ) {
         for ( float x = 0.0; x < width * interactionRate; x++ ) {
-            // Calculate the UV coordinate of the other particle
             vec2 secondParticleCoords = vec2( x + 0.5, y  + 0.5) / resolution.xy;
-            // Sample the position and velocity of the other particle
-            vec3 pos2 = texture2D( texturePosition, secondParticleCoords ).xyz;
-            vec4 velTemp2 = texture2D( textureVelocity, secondParticleCoords );
-            vec3 vel2 = velTemp2.xyz;
-
-            // Calculate the ID of the other particle
+            vec4 pos2raw = texture2D( texturePosition, secondParticleCoords );
+            vec3 pos2 = pos2raw.xyz;
+            float galaxyIndex2 = pos2raw.w;
             float idParticle2 = secondParticleCoords.y * resolution.x + secondParticleCoords.x;
-
-            // Skip the current particle
             if ( idParticle == idParticle2 ) {
                 continue;
             }
-
-            // Calculate the distance and displacement between the two particles
+            // Nur Partikel aus derselben Galaxie
+            if (int(galaxyIndex2 + 0.5) != int(galaxyIndex + 0.5)) {
+                continue;
+            }
             vec3 dPos = pos2 - pos;
             float distance = length( dPos );
-
-            // Calculate the acceleration due to gravity using Newton's law of universal gravitation
             float distanceSq = (distance * distance) + 1.0;
             float gravityField = gravity * 1.0 / distanceSq;
-
-            // Limit the maximum acceleration due to gravity
             gravityField = min( gravityField, 1.0 );
-            // Use a stronger force for the black hole
-                        if(pos2.x == 0.0 && pos2.y == 0.0 && pos2.z == 0.0){
-                            gravityField = gravity * blackHoleForce / distanceSq;
-                        }
-            // Add the acceleration to the total acceleration
             acceleration += gravityField * normalize( dPos );
         }
     }
 
-    // Update the velocity based on the acceleration and elapsed time
     vel += timeStep * acceleration;
-
-    // Store the acceleration in the fourth component of the output color
     accColor = length(acceleration);
     if (length(accColor) > uMaxAccelerationColor) {
-      // If it does, set it to the maximum value
       accColor = normalize(accColor) * uMaxAccelerationColor;
     }
-
-    // Output the velocity and acceleration in the output color
     gl_FragColor = vec4( vel, accColor );
 }
 `
