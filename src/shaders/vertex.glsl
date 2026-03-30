@@ -1,4 +1,3 @@
-export default `
 // For PI declaration:
 #include <common>
 
@@ -18,7 +17,6 @@ uniform float uHideDarkMatter;
 
 // Declare varying variable for color
 varying vec4 vColor;
-
 
 // Normalize an acceleration value to a range of 0 to 1
 float normalized(float acc){
@@ -70,4 +68,3 @@ void main() {
     // Set the color of the particle
     vColor = vec4(finalColor, uLuminosity);
 }
-`

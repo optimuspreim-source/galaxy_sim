@@ -16,8 +16,44 @@ import {BlendShader} from "three/examples/jsm/shaders/BlendShader";
 import {SavePass} from "three/examples/jsm/postprocessing/SavePass";
 import {CopyShader} from "three/examples/jsm/shaders/CopyShader";
 
+
 let container, stats;
 let camera, scene, renderer, geometry, composer;
+
+// Multiplikatoren für Simulationsgeschwindigkeit (nur Render-Loop) und Time Step
+const simulationSpeedMultipliers = [5, 15, 25, 50, 100];
+let simulationSpeedIndex = 0;
+let simulationSpeedMultiplier = simulationSpeedMultipliers[simulationSpeedIndex];
+// Black Hole Bewegungsdaten
+let blackHoleVelocities = [];
+
+const timeStepMultipliers = [1, 5, 15, 25, 50, 100];
+let timeStepIndex = 0;
+let baseTimeStep;
+
+// Overlay-Element für die Anzeige
+let overlay = document.createElement("div");
+overlay.style.position = "fixed";
+overlay.style.top = "20px";
+overlay.style.left = "50%";
+overlay.style.transform = "translateX(-50%)";
+overlay.style.padding = "12px 32px";
+overlay.style.background = "rgba(0,0,0,0.7)";
+overlay.style.color = "#fff";
+overlay.style.fontSize = "2em";
+overlay.style.borderRadius = "12px";
+overlay.style.zIndex = 9999;
+overlay.style.display = "none";
+document.body.appendChild(overlay);
+
+function showOverlay(text) {
+    overlay.textContent = text;
+    overlay.style.display = "block";
+    clearTimeout(overlay._timeout);
+    overlay._timeout = setTimeout(() => {
+        overlay.style.display = "none";
+    }, 900);
+}
 
 
 let gpuCompute;
@@ -66,7 +102,7 @@ savePass = new SavePass(
 );
 
 // blend pass
-let blackHoleStates = [];
+// entfernt: blackHoleStates (wurde nicht verwendet)
 blendPass = new ShaderPass(BlendShader, "tDiffuse1");
 blendPass.uniforms["tDiffuse2"].value = savePass.renderTarget.texture;
 blendPass.uniforms["mixRatio"].value = 0.5;
@@ -206,6 +242,8 @@ function init(typeOfSimulation) {
     composer.addPass(blendPass);
     composer.addPass(savePass);
     composer.addPass(outputPass);
+
+        baseTimeStep = effectController.timeStep;
 }
 
 function initComputeRenderer(typeOfSimulation) {
@@ -342,14 +380,17 @@ function fillTextures( texturePosition, textureVelocity ) {
     // Black-Hole-Parameter-Array vorbereiten (Position, Masse)
     window.blackHoleParams = [];
 
+    // Black Hole Geschwindigkeiten initialisieren (ohne Startgeschwindigkeit)
+    blackHoleVelocities = [];
+
     // Zufällige Offsets und Rotationen für jede Galaxie
     const galaxyParams = [];
     for (let g = 0; g < numGalaxies; g++) {
         // Zufällige Position im Raum (z.B. in einer großen Box)
         const offset = [
-            (Math.random() - 0.5) * 1000,
-            (Math.random() - 0.5) * 1000,
-            (Math.random() - 0.5) * 1000
+            (Math.random() - 0.5) * 5000,
+            (Math.random() - 0.5) * 5000,
+            (Math.random() - 0.5) * 5000
         ];
         // Zufällige Inklination (Eulerwinkel)
         const inclination = [
@@ -363,6 +404,8 @@ function fillTextures( texturePosition, textureVelocity ) {
             position: offset,
             mass: effectController.blackHoleForce
         });
+        // Geschwindigkeit: [0,0,0] (keine Startgeschwindigkeit)
+        blackHoleVelocities.push([0, 0, 0]);
     }
 
     let k = 0;
@@ -396,6 +439,8 @@ function fillTextures( texturePosition, textureVelocity ) {
                 z *= rExp;
                 y = (Math.random() * 2 - 1) * height;
 
+                        // entfernt: baseInteractionRate = effectController.interactionRate;
+                        baseTimeStep = effectController.timeStep;
                 // Rotation anwenden
                 const vec = new THREE.Vector3(x, y, z).applyEuler(rot);
                 x = vec.x + offset[0];
@@ -431,6 +476,8 @@ function fillTextures( texturePosition, textureVelocity ) {
 function fillUniverseTextures( texturePosition, textureVelocity ) {
 
     const posArray = texturePosition.image.data;
+                        // entfernt: baseInteractionRate = effectController.interactionRate;
+                        baseTimeStep = effectController.timeStep;
     const velArray = textureVelocity.image.data;
 
     // Set the radius of the sphere
@@ -466,6 +513,8 @@ function fillUniverseTextures( texturePosition, textureVelocity ) {
         posArray[ k + 1 ] = y;
         posArray[ k + 2 ] = z;
         // Hide dark matter (hide 85% of stars)
+                        // entfernt: baseInteractionRate = effectController.interactionRate;
+                        baseTimeStep = effectController.timeStep;
         if (k > 0.85 * (posArray.length / 4)){
             posArray[ k + 3 ] = 1;
         } else {
@@ -506,6 +555,8 @@ function fillGalaxiesCollisionTextures( texturePosition, textureVelocity ){
             } while ( rr > 1 );
             rr = Math.sqrt( rr );
 
+                        // entfernt: baseInteractionRate = effectController.interactionRate;
+                        baseTimeStep = effectController.timeStep;
             const rExp = radius * Math.pow( rr, middleVelocity );
 
             // Velocity
@@ -540,6 +591,8 @@ function fillGalaxiesCollisionTextures( texturePosition, textureVelocity ){
             const vel = maxVel * Math.pow( rr, 0.2 );
 
             vx = -vel * y + ( Math.random() * 2 - 1 ) * 0.001;
+                        // entfernt: baseInteractionRate = effectController.interactionRate;
+                        baseTimeStep = effectController.timeStep;
             vy =  vel * x + ( Math.random() * 2 - 1 ) * 0.001;
             vz = -( Math.random() * 2 - 1 ) * 0.001 * 0.05;
             const angle = -Math.PI/4;
@@ -574,6 +627,8 @@ function fillGalaxiesCollisionTextures( texturePosition, textureVelocity ){
         velArray[ k + 1 ] = vy;
         velArray[ k + 2 ] = vz;
         velArray[ k + 3 ] = 0;
+                        // entfernt: baseInteractionRate = effectController.interactionRate;
+                        baseTimeStep = effectController.timeStep;
         indice++;
     }
 }
@@ -950,9 +1005,83 @@ function animate() {
     stats.update();
 }
 
+// Eventlistener für Simulationsgeschwindigkeit (T) und Time Step (Z)
+document.addEventListener("keydown", function(e) {
+    // T für Simulationsgeschwindigkeit (nur Render-Loop, nicht Physik-Zeitschritt!)
+    if (e.key === "t" || e.key === "T") {
+        simulationSpeedIndex = (simulationSpeedIndex + 1) % simulationSpeedMultipliers.length;
+        simulationSpeedMultiplier = simulationSpeedMultipliers[simulationSpeedIndex];
+        showOverlay("Speed x" + simulationSpeedMultiplier);
+    }
+    // Z für Time Step
+    if (e.key === "z" || e.key === "Z") {
+        timeStepIndex = (timeStepIndex + 1) % timeStepMultipliers.length;
+        let factor = timeStepMultipliers[timeStepIndex];
+        effectController.timeStep = baseTimeStep * factor;
+        dynamicValuesChanger();
+        showOverlay("Time Step x" + factor);
+    }
+});
+
 function render() {
     if (!paused){
-        gpuCompute.compute();
+        // Black Hole Bewegungen und Gravitation
+        for (let step = 0; step < simulationSpeedMultiplier; step++) {
+            // Gravitation zwischen Black Holes berechnen
+            for (let i = 0; i < window.blackHoleParams.length; i++) {
+                let posA = window.blackHoleParams[i].position;
+                let velA = blackHoleVelocities[i];
+                let massA = window.blackHoleParams[i].mass;
+                // Kraftvektor initialisieren
+                let force = [0, 0, 0];
+                for (let j = 0; j < window.blackHoleParams.length; j++) {
+                    if (i === j) continue;
+                    let posB = window.blackHoleParams[j].position;
+                    let massB = window.blackHoleParams[j].mass;
+                    // Abstand berechnen
+                    let dx = posB[0] - posA[0];
+                    let dy = posB[1] - posA[1];
+                    let dz = posB[2] - posA[2];
+                    let distSq = dx*dx + dy*dy + dz*dz + 1e-6; // Softening
+                    let dist = Math.sqrt(distSq);
+                    // Gravitationskraft (Newton): F = G * m1 * m2 / r^2
+                    let G = 1.0; // Skaliere ggf. für gewünschte Dynamik
+                    let F = G * massA * massB / distSq;
+                    // Richtung normieren
+                    force[0] += F * dx / dist;
+                    force[1] += F * dy / dist;
+                    force[2] += F * dz / dist;
+                }
+                // Beschleunigung: a = F / m
+                let ax = force[0] / massA;
+                let ay = force[1] / massA;
+                let az = force[2] / massA;
+                // Geschwindigkeit updaten
+                velA[0] += ax * effectController.timeStep;
+                velA[1] += ay * effectController.timeStep;
+                velA[2] += az * effectController.timeStep;
+            }
+            // Positionen updaten
+            for (let i = 0; i < window.blackHoleParams.length; i++) {
+                let pos = window.blackHoleParams[i].position;
+                let vel = blackHoleVelocities[i];
+                pos[0] += vel[0] * effectController.timeStep;
+                pos[1] += vel[1] * effectController.timeStep;
+                pos[2] += vel[2] * effectController.timeStep;
+            }
+            // Shader-Uniforms nach jedem Schritt neu setzen
+            const bhPositions = window.blackHoleParams.map(bh => new THREE.Vector3(...bh.position));
+            if (
+                velocityUniforms &&
+                velocityUniforms["uBlackHolePositions"] &&
+                velocityUniforms["uNumBlackHoles"]
+            ) {
+                velocityUniforms["uBlackHolePositions"].value = bhPositions;
+                velocityUniforms["uNumBlackHoles"].value = window.blackHoleParams.length;
+            }
+            // Partikelsimulation
+            gpuCompute.compute();
+        }
         particleUniforms[ "texturePosition" ].value = gpuCompute.getCurrentRenderTarget( positionVariable ).texture;
         particleUniforms[ "textureVelocity" ].value = gpuCompute.getCurrentRenderTarget( velocityVariable ).texture;
         material.uniforms.uMaxAccelerationColor.value = effectController.maxAccelerationColor;
@@ -972,5 +1101,4 @@ function render() {
     material.uniforms.uLuminosity.value = effectController.luminosity;
     material.uniforms.uHideDarkMatter.value = effectController.hideDarkMatter;
     composer.render(scene, camera);
-
 }

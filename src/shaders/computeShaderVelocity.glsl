@@ -1,11 +1,11 @@
-export default `
-#include <common>
+// #include <common>
 
 uniform float timeStep;
 uniform float gravity;
 uniform float interactionRate;
 uniform float blackHoleForce;
 uniform float uMaxAccelerationColor;
+uniform int uNumBlackHoles;
 uniform vec3 uBlackHolePositions[9];
 uniform float uBlackHoleMasses[9];
 
@@ -28,7 +28,7 @@ void main() {
     vec3 acceleration = vec3( 0.0 );
 
     // --- Intergalaktische Kräfte: Black Holes aller Galaxien ---
-    for (int g = 0; g < 9; g++) {
+    for (int g = 0; g < uNumBlackHoles; g++) {
         vec3 bhPos = uBlackHolePositions[g];
         float bhMass = uBlackHoleMasses[g];
         vec3 dPos = bhPos - pos;
@@ -74,4 +74,3 @@ void main() {
     }
     gl_FragColor = vec4( vel, accColor );
 }
-`
