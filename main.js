@@ -1,7 +1,7 @@
-import galaxyVortexShader from '/src/shaders/vertex.glsl';
-import galaxyFragmentShader from '/src/shaders/fragment.glsl';
-import computeShaderVelocity from '/src/shaders/computeShaderVelocity.glsl';
-import computeShaderPosition from '/src/shaders/computeShaderPosition.glsl';
+import galaxyVortexShader from "/src/shaders/vertex.glsl";
+import galaxyFragmentShader from "/src/shaders/fragment.glsl";
+import computeShaderVelocity from "/src/shaders/computeShaderVelocity.glsl";
+import computeShaderPosition from "/src/shaders/computeShaderPosition.glsl";
 import {GUI} from "dat.gui";
 import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module";
@@ -141,22 +141,22 @@ function selectChoice(choice) {
  */
 function init(typeOfSimulation) {
 
-    container = document.createElement( 'div' );
+    container = document.createElement( "div" );
     document.body.appendChild( container );
 
-    camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.01, 9999999999999999999 );
-    camera.position.x = 15
+    camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.01, 1e15 );
+    camera.position.x = 15;
     camera.position.y = 112;
     camera.position.z = 168;
 
     if (effectController.typeOfSimulation === 3){
-        camera.position.x = 15
+        camera.position.x = 15;
         camera.position.y = 456;
         camera.position.z = 504;
     }
 
     if (selectedChoice === 1 && effectController.typeOfSimulation === 2){
-        camera.position.x = 15
+        camera.position.x = 15;
         camera.position.y = 456;
         camera.position.z = 504;
     }
@@ -183,7 +183,7 @@ function init(typeOfSimulation) {
     stats = new Stats();
     container.appendChild( stats.dom );
 
-    window.addEventListener( 'resize', onWindowResize );
+    window.addEventListener( "resize", onWindowResize );
 
     initGUI();
     initParticles(typeOfSimulation);
@@ -220,24 +220,24 @@ function initComputeRenderer(typeOfSimulation) {
     if (typeOfSimulation === "1"){
         fillTextures( dtPosition, dtVelocity );
     } else if (typeOfSimulation === "2"){
-        fillUniverseTextures( dtPosition, dtVelocity )
+        fillUniverseTextures( dtPosition, dtVelocity );
     }  else if (typeOfSimulation === "3"){
-        fillGalaxiesCollisionTextures( dtPosition, dtVelocity )
+        fillGalaxiesCollisionTextures( dtPosition, dtVelocity );
     }
 
-    velocityVariable = gpuCompute.addVariable( 'textureVelocity', computeShaderVelocity, dtVelocity );
-    positionVariable = gpuCompute.addVariable( 'texturePosition', computeShaderPosition, dtPosition );
+    velocityVariable = gpuCompute.addVariable( "textureVelocity", computeShaderVelocity, dtVelocity );
+    positionVariable = gpuCompute.addVariable( "texturePosition", computeShaderPosition, dtPosition );
 
     gpuCompute.setVariableDependencies( velocityVariable, [ positionVariable, velocityVariable ] );
     gpuCompute.setVariableDependencies( positionVariable, [ positionVariable, velocityVariable ] );
 
     velocityUniforms = velocityVariable.material.uniforms;
-    velocityUniforms[ 'gravity' ] = { value: 0.0 };
-    velocityUniforms[ 'interactionRate' ] = { value: 0.0 };
-    velocityUniforms[ 'timeStep' ] = { value: 0.0 };
-    velocityUniforms[ 'uMaxAccelerationColor' ] = { value: 0.0 };
-    velocityUniforms[ 'blackHoleForce' ] = { value: 0.0 };
-    velocityUniforms[ 'luminosity' ] = { value: 0.0 };
+    velocityUniforms[ "gravity" ] = { value: 0.0 };
+    velocityUniforms[ "interactionRate" ] = { value: 0.0 };
+    velocityUniforms[ "timeStep" ] = { value: 0.0 };
+    velocityUniforms[ "uMaxAccelerationColor" ] = { value: 0.0 };
+    velocityUniforms[ "blackHoleForce" ] = { value: 0.0 };
+    velocityUniforms[ "luminosity" ] = { value: 0.0 };
 
     const error = gpuCompute.init();
 
@@ -271,17 +271,17 @@ function initParticles(typeOfSimulation) {
         }
     }
 
-    geometry.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
-    geometry.setAttribute( 'uv', new THREE.BufferAttribute( uvs, 2 ) );
+    geometry.setAttribute( "position", new THREE.BufferAttribute( positions, 3 ) );
+    geometry.setAttribute( "uv", new THREE.BufferAttribute( uvs, 2 ) );
 
     particleUniforms = {
-        'texturePosition': { value: null },
-        'textureVelocity': { value: null },
-        'cameraConstant': { value: getCameraConstant( camera ) },
-        'particlesCount': { value: PARTICLES },
-        'uMaxAccelerationColor': { value: effectController.maxAccelerationColor },
-        'uLuminosity' : { value: luminosity},
-        'uHideDarkMatter' : { value: effectController.hideDarkMatter},
+        "texturePosition": { value: null },
+        "textureVelocity": { value: null },
+        "cameraConstant": { value: getCameraConstant( camera ) },
+        "particlesCount": { value: PARTICLES },
+        "uMaxAccelerationColor": { value: effectController.maxAccelerationColor },
+        "uLuminosity" : { value: luminosity},
+        "uHideDarkMatter" : { value: effectController.hideDarkMatter},
     };
 
     // THREE.ShaderMaterial
@@ -547,9 +547,9 @@ function restartSimulation() {
     scene.remove(particles);
     material.dispose();
     geometry.dispose();
-    document.getElementsByClassName('dg ac').item(0).removeChild(document.getElementsByClassName('dg main a').item(0));
+    document.getElementsByClassName("dg ac").item(0).removeChild(document.getElementsByClassName("dg main a").item(0));
 
-    document.body.removeChild(document.querySelector('canvas').parentNode);
+    document.body.removeChild(document.querySelector("canvas").parentNode);
 
     PARTICLES = effectController.numberOfStars;
 
@@ -567,17 +567,17 @@ function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize( window.innerWidth, window.innerHeight );
-    particleUniforms[ 'cameraConstant' ].value = getCameraConstant( camera );
+    particleUniforms[ "cameraConstant" ].value = getCameraConstant( camera );
 }
 
 function dynamicValuesChanger() {
-    velocityUniforms[ 'gravity' ].value = effectController.gravity;
-    velocityUniforms[ 'interactionRate' ].value = effectController.interactionRate;
-    velocityUniforms[ 'timeStep' ].value = effectController.timeStep;
+    velocityUniforms[ "gravity" ].value = effectController.gravity;
+    velocityUniforms[ "interactionRate" ].value = effectController.interactionRate;
+    velocityUniforms[ "timeStep" ].value = effectController.timeStep;
     console.log(effectController.maxAccelerationColor);
-    velocityUniforms[ 'uMaxAccelerationColor' ].value = effectController.maxAccelerationColor;
-    velocityUniforms[ 'blackHoleForce' ].value = effectController.blackHoleForce;
-    velocityUniforms[ 'luminosity' ].value = effectController.luminosity;
+    velocityUniforms[ "uMaxAccelerationColor" ].value = effectController.maxAccelerationColor;
+    velocityUniforms[ "blackHoleForce" ].value = effectController.blackHoleForce;
+    velocityUniforms[ "luminosity" ].value = effectController.luminosity;
 }
 
 /**
@@ -587,45 +587,45 @@ function initGUI() {
 
     const gui = new GUI( { width: 350 } );
 
-    const folder1 = gui.addFolder( 'Dynamic Parameters' );
+    const folder1 = gui.addFolder( "Dynamic Parameters" );
 
-    const folderGraphicSettings = gui.addFolder( 'Graphics settings' );
+    const folderGraphicSettings = gui.addFolder( "Graphics settings" );
 
-    const folder2 = gui.addFolder( 'Static parameters (need to restart the simulation)' );
+    const folder2 = gui.addFolder( "Static parameters (need to restart the simulation)" );
 
-    folder1.add( effectController, 'gravity', 0.0, 1000.0, 0.05 ).onChange( dynamicValuesChanger ).name("Gravitational force");
-    folder1.add( effectController, 'interactionRate', 0.0, 1.0, 0.001 ).onChange( dynamicValuesChanger ).name("Interaction rate (%)");
-    folder1.add( effectController, 'timeStep', 0.0, 0.01, 0.0001 ).onChange( dynamicValuesChanger ).name("Time step");
-    folder1.add( effectController, 'hideDarkMatter', 0, 1, 1 ).onChange( function ( value ) {
+    folder1.add( effectController, "gravity", 0.0, 1000.0, 0.05 ).onChange( dynamicValuesChanger ).name("Gravitational force");
+    folder1.add( effectController, "interactionRate", 0.0, 1.0, 0.001 ).onChange( dynamicValuesChanger ).name("Interaction rate (%)");
+    folder1.add( effectController, "timeStep", 0.0, 0.01, 0.0001 ).onChange( dynamicValuesChanger ).name("Time step");
+    folder1.add( effectController, "hideDarkMatter", 0, 1, 1 ).onChange( function ( value ) {
         effectController.hideDarkMatter =  value ;
     }   ).name("Hide dark matter");
-    folderGraphicSettings.add( bloom, 'strength', 0.0, 2.0, 0.1 ).onChange(  function ( value ) {
+    folderGraphicSettings.add( bloom, "strength", 0.0, 2.0, 0.1 ).onChange(  function ( value ) {
         bloom.strength =  value ;
         bloomPass.strength = bloom.strength;
     }  ).name("Bloom");
-    folderGraphicSettings.add( effectController, 'motionBlur', 0, 1, 1 ).onChange( function ( value ) {
+    folderGraphicSettings.add( effectController, "motionBlur", 0, 1, 1 ).onChange( function ( value ) {
         effectController.motionBlur =  value ;
     }   ).name("Motion blur");
     if (effectController.typeOfSimulation === 1 || effectController.typeOfSimulation === 3){
-        folder1.add( effectController, 'blackHoleForce', 0.0, 10000.0, 1.0 ).onChange( dynamicValuesChanger ).name("Black hole mass");
-        folderGraphicSettings.add( effectController, 'maxAccelerationColorPercent', 0.01, 100, 0.01 ).onChange(  function ( value ) {
+        folder1.add( effectController, "blackHoleForce", 0.0, 10000.0, 1.0 ).onChange( dynamicValuesChanger ).name("Black hole mass");
+        folderGraphicSettings.add( effectController, "maxAccelerationColorPercent", 0.01, 100, 0.01 ).onChange(  function ( value ) {
             effectController.maxAccelerationColor = value * 10;
             dynamicValuesChanger();
         }  ).name("Colors mix (%)");
-        folder2.add( effectController, 'numberOfStars', 2.0, 1000000.0, 1.0 ).name("Number of stars");
-        folder2.add( effectController, 'radius', 1.0, 1000.0, 1.0 ).name("Galaxy diameter");
-        folder2.add( effectController, 'height', 0.0, 50.0, 0.01 ).name("Galaxy height");
-        folder2.add( effectController, 'middleVelocity', 0.0, 20.0, 0.001 ).name("Center rotation speed");
-        folder2.add( effectController, 'velocity', 0.0, 150.0, 0.1 ).name("Initial rotation speed");
+        folder2.add( effectController, "numberOfStars", 2.0, 1000000.0, 1.0 ).name("Number of stars");
+        folder2.add( effectController, "radius", 1.0, 1000.0, 1.0 ).name("Galaxy diameter");
+        folder2.add( effectController, "height", 0.0, 50.0, 0.01 ).name("Galaxy height");
+        folder2.add( effectController, "middleVelocity", 0.0, 20.0, 0.001 ).name("Center rotation speed");
+        folder2.add( effectController, "velocity", 0.0, 150.0, 0.1 ).name("Initial rotation speed");
     } else if (effectController.typeOfSimulation === 2){
-        folderGraphicSettings.add( effectController, 'luminosity', 0.0, 1.0, 0.0001 ).onChange( dynamicValuesChanger ).name("Luminosity");
-        folderGraphicSettings.add( effectController, 'maxAccelerationColorPercent', 0.01, 100, 0.01 ).onChange(  function ( value ) {
+        folderGraphicSettings.add( effectController, "luminosity", 0.0, 1.0, 0.0001 ).onChange( dynamicValuesChanger ).name("Luminosity");
+        folderGraphicSettings.add( effectController, "maxAccelerationColorPercent", 0.01, 100, 0.01 ).onChange(  function ( value ) {
             effectController.maxAccelerationColor = value / 10;
             dynamicValuesChanger();
         }  ).name("Colors mix (%)");
-        folder2.add( effectController, 'numberOfStars', 2.0, 10000000.0, 1.0 ).name("Number of galaxies");
-        folder2.add( effectController, 'radius', 1.0, 1000.0, 1.0 ).name("Initial diameter of the universe");
-        folder2.add( effectController, 'autoRotation').name('Auto-rotation').listen().onChange(function(){setChecked()});
+        folder2.add( effectController, "numberOfStars", 2.0, 10000000.0, 1.0 ).name("Number of galaxies");
+        folder2.add( effectController, "radius", 1.0, 1000.0, 1.0 ).name("Initial diameter of the universe");
+        folder2.add( effectController, "autoRotation").name("Auto-rotation").listen().onChange(function(){setChecked();});
     }
 
 
@@ -651,10 +651,10 @@ function initGUI() {
         controls.autoRotate = autoRotation;
     }
 
-    folder2.add( effectController, 'typeOfSimulation', typeOfSimulation ).onChange(switchSimulation).name("Type of simulation");
-    folder2.add( buttonRestart, 'restartSimulation' ).name("Restart the simulation");
-    folder2.add( buttonReset, 'resetParameters' ).name("Reset parameters");
-    let buttonPauseController = folder2.add( buttonPause, 'pauseSimulation' ).name("Pause");
+    folder2.add( effectController, "typeOfSimulation", typeOfSimulation ).onChange(switchSimulation).name("Type of simulation");
+    folder2.add( buttonRestart, "restartSimulation" ).name("Restart the simulation");
+    folder2.add( buttonReset, "resetParameters" ).name("Reset parameters");
+    let buttonPauseController = folder2.add( buttonPause, "pauseSimulation" ).name("Pause");
     buttonPauseController.onChange(function(){
         paused = !paused;
         if(paused){
@@ -709,9 +709,9 @@ function switchSimulation(){
                 };
                 material.dispose();
                 geometry.dispose();
-                document.getElementsByClassName('dg ac').item(0).removeChild(document.getElementsByClassName('dg main a').item(0));
+                document.getElementsByClassName("dg ac").item(0).removeChild(document.getElementsByClassName("dg main a").item(0));
 
-                document.body.removeChild(document.querySelector('canvas').parentNode);
+                document.body.removeChild(document.querySelector("canvas").parentNode);
 
                 PARTICLES = effectController.numberOfStars;
 
@@ -744,9 +744,9 @@ function switchSimulation(){
                 };
                 material.dispose();
                 geometry.dispose();
-                document.getElementsByClassName('dg ac').item(0).removeChild(document.getElementsByClassName('dg main a').item(0));
+                document.getElementsByClassName("dg ac").item(0).removeChild(document.getElementsByClassName("dg main a").item(0));
 
-                document.body.removeChild(document.querySelector('canvas').parentNode);
+                document.body.removeChild(document.querySelector("canvas").parentNode);
 
                 PARTICLES = effectController.numberOfStars;
 
@@ -779,9 +779,9 @@ function switchSimulation(){
                 };
                 material.dispose();
                 geometry.dispose();
-                document.getElementsByClassName('dg ac').item(0).removeChild(document.getElementsByClassName('dg main a').item(0));
+                document.getElementsByClassName("dg ac").item(0).removeChild(document.getElementsByClassName("dg main a").item(0));
 
-                document.body.removeChild(document.querySelector('canvas').parentNode);
+                document.body.removeChild(document.querySelector("canvas").parentNode);
 
                 PARTICLES = effectController.numberOfStars;
 
@@ -819,9 +819,9 @@ function switchSimulation(){
                 };
                 material.dispose();
                 geometry.dispose();
-                document.getElementsByClassName('dg ac').item(0).removeChild(document.getElementsByClassName('dg main a').item(0));
+                document.getElementsByClassName("dg ac").item(0).removeChild(document.getElementsByClassName("dg main a").item(0));
 
-                document.body.removeChild(document.querySelector('canvas').parentNode);
+                document.body.removeChild(document.querySelector("canvas").parentNode);
 
                 PARTICLES = effectController.numberOfStars;
 
@@ -854,9 +854,9 @@ function switchSimulation(){
                 };
                 material.dispose();
                 geometry.dispose();
-                document.getElementsByClassName('dg ac').item(0).removeChild(document.getElementsByClassName('dg main a').item(0));
+                document.getElementsByClassName("dg ac").item(0).removeChild(document.getElementsByClassName("dg main a").item(0));
 
-                document.body.removeChild(document.querySelector('canvas').parentNode);
+                document.body.removeChild(document.querySelector("canvas").parentNode);
 
                 PARTICLES = effectController.numberOfStars;
 
@@ -889,9 +889,9 @@ function switchSimulation(){
                 };
                 material.dispose();
                 geometry.dispose();
-                document.getElementsByClassName('dg ac').item(0).removeChild(document.getElementsByClassName('dg main a').item(0));
+                document.getElementsByClassName("dg ac").item(0).removeChild(document.getElementsByClassName("dg main a").item(0));
 
-                document.body.removeChild(document.querySelector('canvas').parentNode);
+                document.body.removeChild(document.querySelector("canvas").parentNode);
 
                 PARTICLES = effectController.numberOfStars;
                 init(effectController.typeOfSimulation.toString());
@@ -914,8 +914,8 @@ function animate() {
 function render() {
     if (!paused){
         gpuCompute.compute();
-        particleUniforms[ 'texturePosition' ].value = gpuCompute.getCurrentRenderTarget( positionVariable ).texture;
-        particleUniforms[ 'textureVelocity' ].value = gpuCompute.getCurrentRenderTarget( velocityVariable ).texture;
+        particleUniforms[ "texturePosition" ].value = gpuCompute.getCurrentRenderTarget( positionVariable ).texture;
+        particleUniforms[ "textureVelocity" ].value = gpuCompute.getCurrentRenderTarget( velocityVariable ).texture;
         material.uniforms.uMaxAccelerationColor.value = effectController.maxAccelerationColor;
     }
     if (effectController.motionBlur){
