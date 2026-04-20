@@ -6,8 +6,8 @@ uniform float interactionRate;
 uniform float blackHoleForce;
 uniform float uMaxAccelerationColor;
 uniform int uNumBlackHoles;
-uniform vec3 uBlackHolePositions[9];
-uniform float uBlackHoleMasses[9];
+uniform vec3 uBlackHolePositions[30];
+uniform float uBlackHoleMasses[30];
 
 const float width = resolution.x;
 const float height = resolution.y;
@@ -28,9 +28,10 @@ void main() {
     vec3 acceleration = vec3( 0.0 );
 
     // --- Intergalaktische Kräfte: Black Holes aller Galaxien ---
-    for (int g = 0; g < uNumBlackHoles; g++) {
-        vec3 bhPos = uBlackHolePositions[g];
+    for (int g = 0; g < 30; g++) {
         float bhMass = uBlackHoleMasses[g];
+        if (bhMass == 0.0) continue;  // skip empty/inactive BH slots (padded entries)
+        vec3 bhPos = uBlackHolePositions[g];
         vec3 dPos = bhPos - pos;
         float distance = length(dPos) + 1e-3;
         float distanceSq = distance * distance + 1.0;

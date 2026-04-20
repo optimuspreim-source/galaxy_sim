@@ -113,22 +113,23 @@ outputPass.renderToScreen = true;
 
 effectController = {
     // Can be changed dynamically
-    gravity: gravity,
-    interactionRate: interactionRate,
-    timeStep: timeStep,
-    blackHoleForce: blackHoleForce,
+    gravity: 126.15,
+    interactionRate: 0.019,
+    timeStep: 0.01,
+    blackHoleForce: 1568.0,
     luminosity: constLuminosity,
-    maxAccelerationColor: 50.0,
-    maxAccelerationColorPercent: 5,
+    maxAccelerationColor: 4.0,
+    maxAccelerationColorPercent: 0.4,
     motionBlur: false,
     hideDarkMatter: false,
 
     // Must restart simulation
-    numberOfStars: numberOfStars,
-    radius: radius,
-    height: height,
-    middleVelocity: middleVelocity,
-    velocity: velocity,
+    numberOfStars: 241064,
+    radius: 357,
+    height: 5,
+    middleVelocity: 2,
+    velocity: 14.3,
+    numberOfGalaxies: 30,
     typeOfSimulation: 1,
     autoRotation: false
 };
@@ -145,10 +146,10 @@ function selectChoice(choice) {
     if (selectedChoice === 1){
         effectController = {
             // Can be changed dynamically
-            gravity: gravity,
-            interactionRate: 0.5,
-            timeStep: timeStep,
-            blackHoleForce: blackHoleForce,
+            gravity: 126.15,
+            interactionRate: 0.019,
+            timeStep: 0.01,
+            blackHoleForce: 1568.0,
             luminosity: constLuminosity,
             maxAccelerationColor: 4.0,
             maxAccelerationColorPercent: 0.4,
@@ -156,11 +157,12 @@ function selectChoice(choice) {
             hideDarkMatter: false,
 
             // Must restart simulation
-            numberOfStars: 10000,
-            radius: 50,
-            height: height,
-            middleVelocity: middleVelocity,
-            velocity: 7,
+            numberOfStars: 241064,
+            radius: 357,
+            height: 5,
+            middleVelocity: 2,
+            velocity: 14.3,
+            numberOfGalaxies: 30,
             typeOfSimulation: 1,
             autoRotation: false
         };
@@ -185,6 +187,12 @@ function init(typeOfSimulation) {
     camera.position.x = 15;
     camera.position.y = 112;
     camera.position.z = 168;
+
+    if (effectController.typeOfSimulation === 1) {
+        camera.position.x = 0;
+        camera.position.y = effectController.radius * 18;
+        camera.position.z = effectController.radius * 32;
+    }
 
     if (effectController.typeOfSimulation === 3){
         camera.position.x = 15;
@@ -248,6 +256,7 @@ function init(typeOfSimulation) {
 
 function initComputeRenderer(typeOfSimulation) {
     let textureSize = Math.round(Math.sqrt(effectController.numberOfStars));
+    PARTICLES = textureSize * textureSize; // snap to exact square — no fractional remainder
     gpuCompute = new GPUComputationRenderer( textureSize, textureSize, renderer );
     if ( renderer.capabilities.isWebGL2 === false ) {
         gpuCompute.setDataType( THREE.HalfFloatType );
@@ -280,9 +289,12 @@ function initComputeRenderer(typeOfSimulation) {
     // Übergabe der Black-Hole-Parameter als Uniform-Arrays
     // (Im Shader: uniform vec3 uBlackHolePositions[9]; uniform float uBlackHoleMasses[9];)
     const bhPositions = window.blackHoleParams.map(bh => new THREE.Vector3(...bh.position));
+    while (bhPositions.length < 30) bhPositions.push(new THREE.Vector3(0, 0, 0));
     const bhMasses = window.blackHoleParams.map(bh => bh.mass);
+    while (bhMasses.length < 30) bhMasses.push(0.0);
     velocityUniforms[ "uBlackHolePositions" ] = { value: bhPositions };
-    velocityUniforms[ "uBlackHoleMasses" ] = { value: bhMasses };
+    velocityUniforms[ "uBlackHoleMasses" ]    = { value: bhMasses };
+    velocityUniforms[ "uNumBlackHoles" ]      = { value: window.blackHoleParams.length };
 
     const error = gpuCompute.init();
 
@@ -306,8 +318,8 @@ function initParticles(typeOfSimulation) {
     // Create an array to store the UV coordinates of each particle
     const uvs = new Float32Array( PARTICLES * 2 );
 
-    // Calculate the size of the matrix based on the number of particles
-    let matrixSize = Math.sqrt(effectController.numberOfStars);
+    // Calculate the size of the matrix based on the (snapped) particle count
+    let matrixSize = Math.sqrt(PARTICLES);
     let p = 0;
     for ( let j = 0; j < matrixSize; j ++ ) {
         for ( let i = 0; i < matrixSize; i ++ ) {
@@ -367,105 +379,230 @@ function fillTextures( texturePosition, textureVelocity ) {
     const posArray = texturePosition.image.data;
     const velArray = textureVelocity.image.data;
 
-    const radius = effectController.radius;
-    const height = effectController.height;
-    const middleVelocity = effectController.middleVelocity;
-    const maxVel = effectController.velocity;
+    const numG    = Math.max(2, Math.min(30, Math.round(effectController.numberOfGalaxies || 30)));
+    const R       = effectController.radius;
+    const H       = effectController.height;
+    const mV      = effectController.middleVelocity;
+    const maxVel  = effectController.velocity;
+    const bhMass  = effectController.blackHoleForce;
+    const G_init  = effectController.gravity;
 
-    const numGalaxies = 9;
-    const totalParticles = effectController.numberOfStars;
-    const particlesPerGalaxy = Math.floor(totalParticles / numGalaxies);
-    const remainder = totalParticles % numGalaxies;
+    // Cluster reference radius and virial velocity
+    const Rcl  = R * 20.0;
+    const vVir = Math.sqrt(Math.max(0, G_init * bhMass * numG / Math.max(Rcl, 1)));
 
-    // Black-Hole-Parameter-Array vorbereiten (Position, Masse)
     window.blackHoleParams = [];
+    blackHoleVelocities    = [];
+    const defs = [];
 
-    // Black Hole Geschwindigkeiten initialisieren (ohne Startgeschwindigkeit)
-    blackHoleVelocities = [];
+    // ── Structured unit system: solos · pairs · triplets ─────────────────────
+    // Each restart: 30 galaxies are randomly partitioned into units of size 1, 2, or 3.
+    // Each unit occupies a unique position in 3D space and has its own trajectory
+    // archetype. Three distance tiers (inner/mid/outer) guarantee staggered arrival
+    // times — inner units collide first, outer units arrive long after.
 
-    // Zufällige Offsets und Rotationen für jede Galaxie
-    const galaxyParams = [];
-    for (let g = 0; g < numGalaxies; g++) {
-        // Zufällige Position im Raum (z.B. in einer großen Box)
-        const offset = [
-            (Math.random() - 0.5) * 5000,
-            (Math.random() - 0.5) * 5000,
-            (Math.random() - 0.5) * 5000
-        ];
-        // Zufällige Inklination (Eulerwinkel)
-        const inclination = [
-            Math.random() * Math.PI,
-            Math.random() * Math.PI,
-            Math.random() * Math.PI
-        ];
-        galaxyParams.push({ offset, inclination });
-        // Black-Hole-Parameter speichern (Position, Masse)
-        window.blackHoleParams.push({
-            position: offset,
-            mass: effectController.blackHoleForce
-        });
-        // Geschwindigkeit: [0,0,0] (keine Startgeschwindigkeit)
-        blackHoleVelocities.push([0, 0, 0]);
+    // Step 1 — build unit size list (weights: 20% solo, 42% pair, 38% triplet)
+    const unitSizes = [];
+    let _assigned = 0;
+    while (_assigned < numG) {
+        const left = numG - _assigned;
+        let sz;
+        if      (left === 1) sz = 1;
+        else if (left === 2) sz = 2;
+        else { const r = Math.random(); sz = r < 0.20 ? 1 : r < 0.62 ? 2 : 3; }
+        unitSizes.push(sz);
+        _assigned += sz;
     }
+    const nUnits = unitSizes.length;
 
-    let k = 0;
-    for (let g = 0; g < numGalaxies; g++) {
-        const n = particlesPerGalaxy + (g < remainder ? 1 : 0);
-        const { offset, inclination } = galaxyParams[g];
-        const rot = new THREE.Euler(...inclination);
-
-        for (let i = 0; i < n; i++, k += 4) {
-            let x, y, z, vx, vy, vz, rr;
-            if (i === 0) {
-                // Black Hole im Zentrum der Galaxie
-                x = 0; y = 0; z = 0; rr = 0;
-                vx = 0; vy = 0; vz = 0;
-            } else {
-                do {
-                    x = (Math.random() * 2 - 1);
-                    z = (Math.random() * 2 - 1);
-                    rr = x * x + z * z;
-                } while (rr > 1);
-                rr = Math.sqrt(rr);
-
-                const rExp = radius * Math.pow(rr, middleVelocity);
-                const vel = maxVel * Math.pow(rr, 0.2);
-
-                vx = vel * z + (Math.random() * 2 - 1) * 0.001;
-                vy = (Math.random() * 2 - 1) * 0.001 * 0.05;
-                vz = -vel * x + (Math.random() * 2 - 1) * 0.001;
-
-                x *= rExp;
-                z *= rExp;
-                y = (Math.random() * 2 - 1) * height;
-
-                        // entfernt: baseInteractionRate = effectController.interactionRate;
-                        baseTimeStep = effectController.timeStep;
-                // Rotation anwenden
-                const vec = new THREE.Vector3(x, y, z).applyEuler(rot);
-                x = vec.x + offset[0];
-                y = vec.y + offset[1];
-                z = vec.z + offset[2];
-
-                const vvec = new THREE.Vector3(vx, vy, vz).applyEuler(rot);
-                vx = vvec.x;
-                vy = vvec.y;
-                vz = vvec.z;
-            }
-
-            posArray[k + 0] = x;
-            posArray[k + 1] = y;
-            posArray[k + 2] = z;
-            // Galaxie-Index als viertes Attribut (statt dark matter flag)
-            posArray[k + 3] = g;
-
-            velArray[k + 0] = vx;
-            velArray[k + 1] = vy;
-            velArray[k + 2] = vz;
-            velArray[k + 3] = 0;
+    // Step 2 — shuffle galaxy indices, then assign to units in order
+    const _shuffled = Array.from({length: numG}, (_, i) => i);
+    for (let i = numG - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = _shuffled[i]; _shuffled[i] = _shuffled[j]; _shuffled[j] = t;
+    }
+    const _unitOf     = new Int32Array(numG); // unit index per galaxy
+    const _posInUnit  = new Int32Array(numG); // seat index within unit (0/1/2)
+    let _gi = 0;
+    for (let u = 0; u < nUnits; u++) {
+        for (let s = 0; s < unitSizes[u]; s++) {
+            _unitOf[_shuffled[_gi]] = u;
+            _posInUnit[_shuffled[_gi]] = s;
+            _gi++;
         }
     }
-    // Übergabe der Black-Hole-Parameter an Shader muss im nächsten Schritt erfolgen
+
+    // Step 3 — place each unit on Fibonacci sphere, distance tier = u % 3
+    //   tier 0 (inner)  0.6–1.0 × Rcl  → arrives first
+    //   tier 1 (mid)    1.2–1.7 × Rcl  → arrives second
+    //   tier 2 (outer)  2.0–2.6 × Rcl  → arrives last
+    const PHI = Math.PI * (1.0 + Math.sqrt(5));
+    const unitCfg = [];
+    for (let u = 0; u < nUnits; u++) {
+        const theta = Math.acos(1 - 2 * (u + 0.5) / nUnits);
+        const phi   = PHI * u;
+        const nx = Math.sin(theta) * Math.cos(phi);
+        const ny = Math.cos(theta);
+        const nz = Math.sin(theta) * Math.sin(phi);
+
+        const tier = u % 3;
+        const distFrac = tier === 0 ? 0.6 + Math.random() * 0.4
+                       : tier === 1 ? 1.2 + Math.random() * 0.5
+                       :              2.0 + Math.random() * 0.6;
+        const dist = Rcl * distFrac;
+        const ux = nx * dist, uy = ny * dist, uz = nz * dist;
+
+        const inwardDir  = new THREE.Vector3(-nx, -ny, -nz);
+        const upRef      = Math.abs(ny) < 0.85 ? new THREE.Vector3(0,1,0)
+                                                : new THREE.Vector3(1,0,0);
+        const tangentDir = new THREE.Vector3().crossVectors(inwardDir, upRef).normalize();
+        // Second tangent axis (for triplet triangle plane)
+        const tangent2   = new THREE.Vector3().crossVectors(tangentDir, inwardDir).normalize();
+
+        // Step 4 — trajectory archetype for this unit
+        //   0 direct collision · 1 cross-cluster · 2 close flyby
+        //   3 distant sweep    · 4 slow spiral
+        const archetype = Math.floor(Math.random() * 5);
+        let tX = 0, tY = 0, tZ = 0, speedMult, tangFrac;
+        if (archetype === 0) {
+            speedMult = 1.0 + Math.random() * 0.8;  tangFrac = Math.random() * 0.08;
+        } else if (archetype === 1) {
+            const f = 0.8 + Math.random() * 0.4;
+            tX = -ux*f; tY = -uy*f; tZ = -uz*f;
+            speedMult = 1.0 + Math.random() * 0.8;  tangFrac = 0.05 + Math.random() * 0.15;
+        } else if (archetype === 2) {
+            const b = R * (2 + Math.random() * 4);
+            tX = tangentDir.x*b; tY = tangentDir.y*b; tZ = tangentDir.z*b;
+            speedMult = 0.7 + Math.random() * 0.6;  tangFrac = 0.20 + Math.random() * 0.30;
+        } else if (archetype === 3) {
+            const b = R * (6 + Math.random() * 6);
+            tX = tangentDir.x*b; tY = tangentDir.y*b; tZ = tangentDir.z*b;
+            speedMult = 0.5 + Math.random() * 0.5;  tangFrac = 0.45 + Math.random() * 0.40;
+        } else {
+            speedMult = 0.2 + Math.random() * 0.3;  tangFrac = 0.70 + Math.random() * 0.30;
+        }
+        const toTarget  = new THREE.Vector3(tX-ux, tY-uy, tZ-uz).normalize();
+        const baseSpeed = vVir * speedMult;
+        const bulkVec   = toTarget.multiplyScalar(baseSpeed * (1 - tangFrac))
+                            .add(tangentDir.clone().multiplyScalar(baseSpeed * tangFrac));
+
+        // Per-unit random separation: 10–50 × R (4–20× the old 2.5R default)
+        const unitSepR = R * (10 + Math.random() * 40);
+        unitCfg.push({ ux, uy, uz, bulkVec, tangentDir: tangentDir.clone(),
+                       tangent2: tangent2.clone(), sz: unitSizes[u], sepR: unitSepR });
+    }
+
+    // Step 5 — per-galaxy offset inside unit + final position/velocity
+    const galaxyDef = new Array(numG);
+
+    for (let g = 0; g < numG; g++) {
+        const u   = _unitOf[g];
+        const s   = _posInUnit[g];
+        const cfg = unitCfg[u];
+        const sz  = cfg.sz;
+        const sepR = cfg.sepR; // per-unit random separation (10–50 × R)
+
+        let lx = 0, ly = 0, lz = 0, lvx = 0, lvy = 0, lvz = 0;
+
+        if (sz === 2) {
+            // Two galaxies on opposite sides of unit centre; approach each other
+            const sign = s === 0 ? 1 : -1;
+            lx = cfg.tangentDir.x * sepR * sign;
+            ly = cfg.tangentDir.y * sepR * sign;
+            lz = cfg.tangentDir.z * sepR * sign;
+            // Each moves inward at 30% virial speed → head-on inside the pair
+            const vRel = vVir * 0.30;
+            lvx = -cfg.tangentDir.x * sign * vRel;
+            lvy = -cfg.tangentDir.y * sign * vRel;
+            lvz = -cfg.tangentDir.z * sign * vRel;
+        } else if (sz === 3) {
+            // Equilateral triangle; slight random phase jitter per restart
+            const angle = (2 * Math.PI * s) / 3 + Math.random() * 0.25;
+            lx = (cfg.tangentDir.x * Math.cos(angle) + cfg.tangent2.x * Math.sin(angle)) * sepR;
+            ly = (cfg.tangentDir.y * Math.cos(angle) + cfg.tangent2.y * Math.sin(angle)) * sepR;
+            lz = (cfg.tangentDir.z * Math.cos(angle) + cfg.tangent2.z * Math.sin(angle)) * sepR;
+            // Slow infall toward triplet centre (12% virial) — merges gradually
+            const vRel = vVir * 0.12;
+            lvx = -lx / sepR * vRel;
+            lvy = -ly / sepR * vRel;
+            lvz = -lz / sepR * vRel;
+        }
+        // Solo: all offsets zero
+
+        const cx = cfg.ux + lx;
+        const cy = cfg.uy + ly;
+        const cz = cfg.uz + lz;
+        const rot = new THREE.Euler(
+            Math.random() * Math.PI * 2,
+            Math.random() * Math.PI * 2,
+            Math.random() * Math.PI * 0.5, 'XYZ');
+        const sizeFactor  = 0.5 + Math.random() * 1.0;
+        const thickFactor = 0.3 + Math.random() * 1.4;
+        const velFactor   = 0.8 + Math.random() * 0.4;
+
+        galaxyDef[g] = {
+            cx, cy, cz,
+            vx: cfg.bulkVec.x + lvx,
+            vy: cfg.bulkVec.y + lvy,
+            vz: cfg.bulkVec.z + lvz,
+            rot,
+            r: R * sizeFactor, h: H * thickFactor, v: maxVel * velFactor
+        };
+    }
+
+    // Build BH arrays in galaxy-index order (GLSL requires blackHoleParams[g] ↔ galaxy g)
+    for (let g = 0; g < numG; g++) {
+        const d = galaxyDef[g];
+        defs.push(d);
+        window.blackHoleParams.push({ position: [d.cx, d.cy, d.cz], mass: bhMass });
+        blackHoleVelocities.push([d.vx, d.vy, d.vz]);
+    }
+
+    // Interleaved layout: texture slot idx = g + i*numG
+    // → the interaction scan zone (top-left rect) contains particles from every galaxy equally
+    // → particle–particle gravity operates identically for all 30 galaxies
+    const perGalaxy = new Int32Array(numG); // per-galaxy particle counter
+    for (let idx = 0; idx < PARTICLES; idx++) {
+        const g   = idx % numG;
+        const i   = perGalaxy[g]++;
+        const k   = idx * 4;
+        const def = defs[g];
+
+        if (i === 0) {
+            // Black hole: at galaxy centre, carries bulk cluster velocity
+            posArray[k]   = def.cx; posArray[k+1] = def.cy;
+            posArray[k+2] = def.cz; posArray[k+3] = g;
+            velArray[k]   = def.vx; velArray[k+1] = def.vy;
+            velArray[k+2] = def.vz; velArray[k+3] = 0;
+            continue;
+        }
+
+        // Exponential disk placement (rejection-sampled unit disk)
+        let x, z, rr;
+        do {
+            x  = Math.random() * 2 - 1;
+            z  = Math.random() * 2 - 1;
+            rr = x*x + z*z;
+        } while (rr > 1);
+        rr = Math.sqrt(rr);
+
+        const rExp  = def.r * Math.pow(rr, mV);
+        const circV = def.v * Math.pow(rr, 0.2);
+
+        let pvx =  circV * z  + (Math.random() - 0.5) * 0.002;
+        let pvy = (Math.random() - 0.5) * 0.002;
+        let pvz = -circV * x  + (Math.random() - 0.5) * 0.002;
+
+        const lp = new THREE.Vector3(x * rExp, (Math.random() * 2 - 1) * def.h, z * rExp).applyEuler(def.rot);
+        const lv = new THREE.Vector3(pvx, pvy, pvz).applyEuler(def.rot);
+
+        posArray[k]   = lp.x + def.cx; posArray[k+1] = lp.y + def.cy;
+        posArray[k+2] = lp.z + def.cz; posArray[k+3] = g;
+        velArray[k]   = lv.x + def.vx; velArray[k+1] = lv.y + def.vy;
+        velArray[k+2] = lv.z + def.vz; velArray[k+3] = 0;
+    }
+
+    baseTimeStep = effectController.timeStep;
 }
 
 /**
@@ -474,6 +611,8 @@ function fillTextures( texturePosition, textureVelocity ) {
  * @param textureVelocity array that contain velocities of particles
  */
 function fillUniverseTextures( texturePosition, textureVelocity ) {
+    window.blackHoleParams = [];
+    blackHoleVelocities    = [];
 
     const posArray = texturePosition.image.data;
                         // entfernt: baseInteractionRate = effectController.interactionRate;
@@ -529,6 +668,9 @@ function fillUniverseTextures( texturePosition, textureVelocity ) {
 }
 
 function fillGalaxiesCollisionTextures( texturePosition, textureVelocity ){
+    window.blackHoleParams = [];
+    blackHoleVelocities    = [];
+
     const posArray = texturePosition.image.data;
     const velArray = textureVelocity.image.data;
 
@@ -711,6 +853,9 @@ function initGUI() {
         folder2.add( effectController, "height", 0.0, 50.0, 0.01 ).name("Galaxy height");
         folder2.add( effectController, "middleVelocity", 0.0, 20.0, 0.001 ).name("Center rotation speed");
         folder2.add( effectController, "velocity", 0.0, 150.0, 0.1 ).name("Initial rotation speed");
+        if (effectController.typeOfSimulation === 1) {
+            folder2.add( effectController, "numberOfGalaxies", 2, 30, 1 ).name("Number of galaxies");
+        }
     } else if (effectController.typeOfSimulation === 2){
         folderGraphicSettings.add( effectController, "luminosity", 0.0, 1.0, 0.0001 ).onChange( dynamicValuesChanger ).name("Luminosity");
         folderGraphicSettings.add( effectController, "maxAccelerationColorPercent", 0.01, 100, 0.01 ).onChange(  function ( value ) {
@@ -782,10 +927,10 @@ function switchSimulation(){
                 bloom.strength = 1.0;
                 effectController = {
                     // Can be changed dynamically
-                    gravity: gravity,
-                    interactionRate: 0.5,
-                    timeStep: timeStep,
-                    blackHoleForce: blackHoleForce,
+                    gravity: 126.15,
+                    interactionRate: 0.019,
+                    timeStep: 0.01,
+                    blackHoleForce: 1568.0,
                     luminosity: constLuminosity,
                     maxAccelerationColor: 4.0,
                     maxAccelerationColorPercent: 0.4,
@@ -793,11 +938,12 @@ function switchSimulation(){
                     hideDarkMatter: false,
 
                     // Must restart simulation
-                    numberOfStars: 10000,
-                    radius: 50,
-                    height: height,
-                    middleVelocity: middleVelocity,
-                    velocity: 7,
+                    numberOfStars: 241064,
+                    radius: 357,
+                    height: 5,
+                    middleVelocity: 2,
+                    velocity: 14.3,
+                    numberOfGalaxies: 30,
                     typeOfSimulation: 1,
                     autoRotation: false
                 };
@@ -897,17 +1043,18 @@ function switchSimulation(){
                     timeStep: timeStep,
                     blackHoleForce: blackHoleForce,
                     luminosity: constLuminosity,
-                    maxAccelerationColor: 50.0,
-                    maxAccelerationColorPercent: 5.0,
+                    maxAccelerationColor: 4.0,
+                    maxAccelerationColorPercent: 0.4,
                     motionBlur: false,
                     hideDarkMatter: false,
 
                     // Must restart simulation
-                    numberOfStars: numberOfStars,
-                    radius: radius,
-                    height: height,
-                    middleVelocity: middleVelocity,
-                    velocity: velocity,
+                    numberOfStars: 241064,
+                    radius: 357,
+                    height: 5,
+                    middleVelocity: 2,
+                    velocity: 14.3,
+                    numberOfGalaxies: 30,
                     typeOfSimulation: 1,
                     autoRotation: false
                 };
@@ -1027,59 +1174,55 @@ function render() {
     if (!paused){
         // Black Hole Bewegungen und Gravitation
         for (let step = 0; step < simulationSpeedMultiplier; step++) {
-            // Gravitation zwischen Black Holes berechnen
+            // BH-BH gravity — G matches the velocity shader uniform for scale consistency
+            const G_bh  = effectController.gravity;
+            const soft2 = effectController.radius * effectController.radius * 0.01 + 1.0;
             for (let i = 0; i < window.blackHoleParams.length; i++) {
-                let posA = window.blackHoleParams[i].position;
-                let velA = blackHoleVelocities[i];
-                let massA = window.blackHoleParams[i].mass;
-                // Kraftvektor initialisieren
-                let force = [0, 0, 0];
+                const posA  = window.blackHoleParams[i].position;
+                const velA  = blackHoleVelocities[i];
+                const massA = window.blackHoleParams[i].mass;
+                let fx = 0, fy = 0, fz = 0;
                 for (let j = 0; j < window.blackHoleParams.length; j++) {
                     if (i === j) continue;
-                    let posB = window.blackHoleParams[j].position;
-                    let massB = window.blackHoleParams[j].mass;
-                    // Abstand berechnen
-                    let dx = posB[0] - posA[0];
-                    let dy = posB[1] - posA[1];
-                    let dz = posB[2] - posA[2];
-                    let distSq = dx*dx + dy*dy + dz*dz + 1e-6; // Softening
-                    let dist = Math.sqrt(distSq);
-                    // Gravitationskraft (Newton): F = G * m1 * m2 / r^2
-                    let G = 1.0; // Skaliere ggf. für gewünschte Dynamik
-                    let F = G * massA * massB / distSq;
-                    // Richtung normieren
-                    force[0] += F * dx / dist;
-                    force[1] += F * dy / dist;
-                    force[2] += F * dz / dist;
+                    const posB  = window.blackHoleParams[j].position;
+                    const massB = window.blackHoleParams[j].mass;
+                    const dx = posB[0] - posA[0];
+                    const dy = posB[1] - posA[1];
+                    const dz = posB[2] - posA[2];
+                    const distSq = dx*dx + dy*dy + dz*dz + soft2;
+                    const dist   = Math.sqrt(distSq);
+                    // Acceleration on A due to B (same form as shader: G * bhMass / distSq)
+                    const a = G_bh * massB / distSq;
+                    fx += a * dx / dist;
+                    fy += a * dy / dist;
+                    fz += a * dz / dist;
                 }
-                // Beschleunigung: a = F / m
-                let ax = force[0] / massA;
-                let ay = force[1] / massA;
-                let az = force[2] / massA;
-                // Geschwindigkeit updaten
-                velA[0] += ax * effectController.timeStep;
-                velA[1] += ay * effectController.timeStep;
-                velA[2] += az * effectController.timeStep;
+                velA[0] += fx * effectController.timeStep;
+                velA[1] += fy * effectController.timeStep;
+                velA[2] += fz * effectController.timeStep;
             }
-            // Positionen updaten
+            // Position update uses delta = 1/30 to match the GPU position shader exactly
+            const bhDelta = 1.0 / 30.0;
             for (let i = 0; i < window.blackHoleParams.length; i++) {
-                let pos = window.blackHoleParams[i].position;
-                let vel = blackHoleVelocities[i];
-                pos[0] += vel[0] * effectController.timeStep;
-                pos[1] += vel[1] * effectController.timeStep;
-                pos[2] += vel[2] * effectController.timeStep;
+                const pos = window.blackHoleParams[i].position;
+                const vel = blackHoleVelocities[i];
+                pos[0] += vel[0] * bhDelta;
+                pos[1] += vel[1] * bhDelta;
+                pos[2] += vel[2] * bhDelta;
             }
-            // Shader-Uniforms nach jedem Schritt neu setzen
-            const bhPositions = window.blackHoleParams.map(bh => new THREE.Vector3(...bh.position));
-            if (
-                velocityUniforms &&
-                velocityUniforms["uBlackHolePositions"] &&
-                velocityUniforms["uNumBlackHoles"]
-            ) {
-                velocityUniforms["uBlackHolePositions"].value = bhPositions;
-                velocityUniforms["uNumBlackHoles"].value = window.blackHoleParams.length;
+            // Push updated BH positions to velocity shader
+            if (velocityUniforms && velocityUniforms["uBlackHolePositions"]) {
+                const updatedPos = window.blackHoleParams.map(bh => new THREE.Vector3(...bh.position));
+                while (updatedPos.length < 30) updatedPos.push(new THREE.Vector3(0, 0, 0));
+                const updatedMasses = window.blackHoleParams.map(bh => bh.mass);
+                while (updatedMasses.length < 30) updatedMasses.push(0.0);
+                velocityUniforms["uBlackHolePositions"].value = updatedPos;
+                velocityUniforms["uBlackHoleMasses"].value    = updatedMasses;
+                if (velocityUniforms["uNumBlackHoles"]) {
+                    velocityUniforms["uNumBlackHoles"].value = window.blackHoleParams.length;
+                }
             }
-            // Partikelsimulation
+            // Particle simulation step
             gpuCompute.compute();
         }
         particleUniforms[ "texturePosition" ].value = gpuCompute.getCurrentRenderTarget( positionVariable ).texture;
