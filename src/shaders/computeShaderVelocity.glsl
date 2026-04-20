@@ -62,7 +62,14 @@ void main() {
             vec3 dPos = pos2 - pos;
             float distance = length( dPos );
             float distanceSq = (distance * distance) + 1.0;
-            float gravityField = gravity * 1.0 / distanceSq;
+            // Dynamische Masse: blaue Partikel (acc2Norm < 0.5) haben Masse 5, orange Masse 1.
+            // acc2 = Vorframe-accColor aus textureVelocity.w — exakt derselbe Wert,
+            // den der Vertex-Shader für die Farbe nutzt (normalized(acc) = acc / uMaxAccelerationColor).
+            // uMaxAccelerationColor koppelt die Masse direkt an den Color-Mix-Slider.
+            float acc2 = texture2D( textureVelocity, secondParticleCoords ).w;
+            float acc2Norm = acc2 / max( uMaxAccelerationColor, 1e-4 );
+            float mass2 = acc2Norm < 0.5 ? 100.0 : 1.0;
+            float gravityField = gravity * mass2 / distanceSq;
             gravityField = min( gravityField, 1.0 );
             acceleration += gravityField * normalize( dPos );
         }
